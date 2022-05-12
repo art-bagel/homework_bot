@@ -19,7 +19,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 RETRY_TIME = 600
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/1'
+ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 
@@ -45,6 +45,7 @@ def get_api_answer(current_timestamp):
     """Запрашивает статус домашней работы у АPI практикума."""
     params = {'from_date': current_timestamp}
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    print(response.json())
     response.raise_for_status()
     return response.json()
 
