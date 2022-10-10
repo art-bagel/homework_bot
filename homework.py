@@ -76,14 +76,14 @@ def check_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Проверяет ответ API на корретность данных."""
     if not isinstance(response, dict):
         raise TypeError('Ответ API не является словарем')
-    current_date = response.get('current_date', None)
-    homework = response.get('homeworks', None)
-    if not homework:
+    if 'homeworks' not in response:
         raise KeyError(
             'Ключ homeworks отсутствует в ответе API')
-    if not current_date:
+    if 'current_date' not in response:
         raise KeyError(
             'Ключ current_date отсутствует в ответе API')
+    current_date = response.get('current_date', None)
+    homework = response.get('homeworks', None)
     if not isinstance(current_date, int):
         raise TypeError(
             'Значение по ключу current_date не является целым числом')
