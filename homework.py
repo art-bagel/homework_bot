@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from exeptions import (
     APIIncorrectParametersError, APIRequestError, APITimeoutError,
-    APIUnauthorized, ConnectionError)
+    APIUnauthorized, ConnectionError, TelegramError)
 from loging_config import LOGGING_CONFIG
 
 
@@ -35,16 +35,15 @@ HOMEWORK_STATUSES = {
 }
 
 
-def send_message(bot: telegram.Bot, message: str) -> bool:
+def send_message(bot: telegram.Bot, message: str) -> None:
     """Отправляет сообщение о статусе работы пользователю в телеграмм."""
     try:
+        logging.info(f'Отправляем сообщение: {message}')
         bot.sendMessage(TELEGRAM_CHAT_ID, message)
-        logging.info(f'Сообщение {message} отправлено!')
-        return True
+        logger.info(f'Сообщение {message} отправлено!')
     except telegram.TelegramError as error:
-        logger.error(f'Сообщение ({message}) не отправлено! '
-                     f'Возникла ошибка: {error}')
-        return False
+        raise TelegramError(f'Сообщение ({message}) не отправлено! '
+                            f'Возникла ошибка: {error}')
 
 
 def get_api_answer(current_timestamp: int) -> Dict[str, Any]:
@@ -55,10 +54,10 @@ def get_api_answer(current_timestamp: int) -> Dict[str, Any]:
         if response.status_code == HTTPStatus.UNAUTHORIZED:
             raise APIUnauthorized(
                 'Предоставлены некорректные учетные данные')
-        elif response.status_code == HTTPStatus.BAD_REQUEST:
+        if response.status_code == HTTPStatus.BAD_REQUEST:
             raise APIIncorrectParametersError(
                 'Некорректный формат переданного параметра from_date')
-        elif response.status_code != HTTPStatus.OK:
+        if response.status_code != HTTPStatus.OK:
             raise APIRequestError(f'HTTPError: code - {response.status_code}')
     except requests.exceptions.ConnectionError:
         raise ConnectionError('Возникли проблемы с соединением')
@@ -67,9 +66,7 @@ def get_api_answer(current_timestamp: int) -> Dict[str, Any]:
     except requests.exceptions.RequestException:
         raise APIRequestError(f'Ошибка при запросе к эндпоинту: {ENDPOINT}')
     else:
-        homework_status = response.json()
-        logger.info('Запрос к API выполнен успешно')
-        return homework_status
+        return response.json()
 
 
 def check_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -82,8 +79,8 @@ def check_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     if 'current_date' not in response:
         raise KeyError(
             'Ключ current_date отсутствует в ответе API')
-    current_date = response.get('current_date', None)
-    homework = response.get('homeworks', None)
+    current_date = response.get('current_date')
+    homework = response.get('homeworks')
     if not isinstance(current_date, int):
         raise TypeError(
             'Значение по ключу current_date не является целым числом')
@@ -95,41 +92,29 @@ def check_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def parse_status(homework: Dict[str, Any]) -> str:
     """Формирует сообщение о статусе домашней работы."""
-    homework_name = homework.get('homework_name')
-    homework_status = homework.get('status')
-    if homework_name is None:
+    if 'homework_name' not in homework:
         raise KeyError('Отсутствует ключ homework_name')
-    if homework_status is None:
+    if 'status' not in homework:
         raise KeyError('Отсутствует ключ status')
-    if homework_status not in HOMEWORK_STATUSES:
+    if homework['status'] not in HOMEWORK_STATUSES:
         raise ValueError(
-            f'Неизвестный статус работы: {homework_status}')
-    verdict = HOMEWORK_STATUSES.get(homework_status)
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+            f'Неизвестный статус работы: {homework["status"]}')
+    verdict = HOMEWORK_STATUSES.get(homework['status'])
+    return 'Изменился статус проверки работы "{}". {}'.format(
+        homework['homework_name'], verdict)
 
 
 def check_tokens() -> bool:
     """Проверяем наличие всех api токенов."""
-    is_tokens = True
-    if not PRACTICUM_TOKEN:
-        logger.critical(
-            'Отсутствует обязательная переменная окружения: PRACTICUM_TOKEN')
-        is_tokens = False
-    if not TELEGRAM_TOKEN:
-        logger.critical(
-            'Отсутствует обязательная переменная окружения: TELEGRAM_TOKEN')
-        is_tokens = False
-    if not TELEGRAM_CHAT_ID:
-        logger.critical(
-            'Отсутствует обязательная переменная окружения: TELEGRAM_CHAT_ID')
-        is_tokens = False
-    return is_tokens
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        sys.exit()
+        logger.critical('Отсутствуют обязательные переменные окружения: '
+                        'PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID')
+        sys.exit('Отсутствуют обязательные переменные окружения')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     last_message, new_message, homework_status = None, None, None
@@ -139,16 +124,19 @@ def main():
             homeworks = check_response(homework_status)
             if homeworks:
                 new_message = parse_status(homeworks[0])
+                send_message(bot, new_message)
             else:
                 logger.debug('Статус работы не изменился')
-        except Exception as error:
-            new_message = str(error)
-            logger.error(new_message)
-        else:
             current_timestamp = homework_status.get('current_date')
-        finally:
-            if last_message != new_message and send_message(bot, new_message):
+        except TelegramError as error:
+            logger.error(error)
+        except Exception as error:
+            logger.error(error)
+            new_message = str(error)
+            if new_message != last_message:
+                send_message(bot, new_message)
                 last_message = new_message
+        finally:
             time.sleep(RETRY_TIME)
 
 

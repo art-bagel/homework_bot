@@ -27,3 +27,9 @@ class APIIncorrectParametersError(Exception):
     """Вызывается если в запросе переданы некорректные параметры."""
 
     pass
+
+
+class TelegramError(Exception):
+    """Вызывается если возникла ошибка при отправке сообщения."""
+
+    pass
