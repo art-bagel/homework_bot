@@ -52,39 +52,41 @@ def get_api_answer(current_timestamp: int) -> Dict[str, Any]:
     params = {'from_date': current_timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-        response.raise_for_status()
-        homework_status = response.json()
-        logger.info('Запрос к API выполнен успешно')
-        return homework_status
-    except requests.exceptions.HTTPError as error:
         if response.status_code == HTTPStatus.UNAUTHORIZED:
             raise APIUnauthorized(
                 'Предоставлены некорректные учетные данные')
         elif response.status_code == HTTPStatus.BAD_REQUEST:
             raise APIIncorrectParametersError(
                 'Некорректный формат переданного параметра from_date')
-        raise APIRequestError(f'HTTPError {error}')
+        elif response.status_code != HTTPStatus.OK:
+            raise APIRequestError(f'HTTPError: code - {response.status_code}')
     except requests.exceptions.ConnectionError:
         raise ConnectionError('Возникли проблемы с соединением')
     except requests.exceptions.Timeout:
         raise APITimeoutError('Истекло время ожидания ответа  от сервера')
     except requests.exceptions.RequestException:
         raise APIRequestError(f'Ошибка при запросе к эндпоинту: {ENDPOINT}')
-    except Exception as error:
-        raise APIRequestError(f'Проблемы при обращении к API: {error}')
+    else:
+        homework_status = response.json()
+        logger.info('Запрос к API выполнен успешно')
+        return homework_status
 
 
 def check_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Проверяет ответ API на корретность данных."""
     if not isinstance(response, dict):
         raise TypeError('Ответ API не является словарем')
-    if 'homeworks' not in response:
+    current_date = response.get('current_date', None)
+    homework = response.get('homeworks', None)
+    if not homework:
         raise KeyError(
             'Ключ homeworks отсутствует в ответе API')
-    if 'current_date' not in response:
+    if not current_date:
         raise KeyError(
             'Ключ current_date отсутствует в ответе API')
-    homework = response.get('homeworks')
+    if not isinstance(current_date, int):
+        raise TypeError(
+            'Значение по ключу current_date не является целым числом')
     if not isinstance(homework, list):
         raise TypeError(
             'Значение по ключу homeworks не является списком')
@@ -129,7 +131,7 @@ def main():
     if not check_tokens():
         sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time() - (30 * 24 * 60 * 60))
+    current_timestamp = int(time.time())
     last_message, new_message, homework_status = None, None, None
     while True:
         try:
