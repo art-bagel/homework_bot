@@ -71,7 +71,7 @@ def get_api_answer(current_timestamp: int) -> Dict[str, Any]:
     except requests.exceptions.RequestException:
         raise APIRequestError(f'Ошибка при запросе к эндпоинту: {ENDPOINT}')
     except Exception as error:
-        raise APIRequestError(f'Возникли проблемы при обращении к API: {error}')
+        raise APIRequestError(f'Проблемы при обращении к API: {error}')
 
 
 def check_response(response: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -129,7 +129,7 @@ def main():
     if not check_tokens():
         sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time())
+    current_timestamp = int(time.time() - (30 * 24 * 60 * 60))
     last_message, new_message, homework_status = None, None, None
     while True:
         try:
